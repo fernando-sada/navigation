@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Street Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: system-ui; background: #1f2937; color: white; }
+        svg { background: #ffffff; }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake { animation: shake 0.3s ease-in-out; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden relative">
+
+    <div id="toast" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded shadow-lg font-bold opacity-0 pointer-events-none transition-opacity duration-300 z-50">
+        Invalid Turn: No road exists in that direction!
+    </div>
+
+    <div class="w-80 p-4 flex flex-col gap-4 overflow-auto shrink-0 border-r border-gray-700 relative z-10">
+        <select id="startInter" class="bg-gray-800 border border-gray-600 p-2 rounded" onchange="resetRoute(); renderDir(); updateState();"></select>
+        <select id="initialDir" class="bg-gray-800 border border-gray-600 p-2 rounded" onchange="resetRoute(); updateState();"></select>
+        
+        <div class="h-px bg-gray-700 my-2"></div>
+
+        <div id="turnsList" class="bg-gray-800 p-2 flex-1 overflow-auto rounded border border-gray-600"></div>
+        
+        <div class="grid grid-cols-3 gap-2 mt-2">
+            <button id="btnLeft" onclick="attemptTurn('Left', this)" class="bg-gray-700 py-3 rounded font-bold hover:bg-gray-600 shadow transition text-lg">↶ Left</button>
+            <button id="btnStraight" onclick="attemptTurn('Straight', this)" class="bg-gray-700 py-3 rounded font-bold hover:bg-gray-600 shadow transition text-lg">↑ Straight</button>
+            <button id="btnRight" onclick="attemptTurn('Right', this)" class="bg-gray-700 py-3 rounded font-bold hover:bg-gray-600 shadow transition text-lg">↷ Right</button>
+        </div>
+    </div>
+    
+    <div class="flex-1 p-4 flex items-center justify-center overflow-auto bg-gray-900 z-0">
+        <svg id="mapSvg" width="100%" height="100%" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet" class="max-h-full rounded shadow-xl bg-white"></svg>
+    </div>
+
+    <script>
+        window.loadSVG = loadSVG;
+        window.resetRoute = resetRoute;
+        window.renderDir = renderDir;
+        window.updateState = updateState;
+        window.attemptTurn = attemptTurn;
+        window.removeTurn = removeTurn;
+
+        // Hardcoded SVG Data
+        const hardcodedSvgMap = `
+<svg version="1.1" id="Streets" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 6051.667 4339" enable-background="new 0 0 6051.667 4339" xml:space="preserve">
+<g id="somerset_00000031895615982215249860000015999524272705577089_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="2958.765" y1="2301.668" x2="1431.003" y2="3202.788"/>
+</g>
+<g id="somerset_00000088818776918160988520000000422391204928920992_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="3344.7" y1="2074.033" x2="2958.765" y2="2301.668"/>
+</g>
+<g id="somerset">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="4744.859" y1="1248.177" x2="3344.7" y2="2074.033"/>
+</g>
+<g id="kent_00000049929735474809476400000014421018261377658296_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="2958.765" y1="2301.668" x2="4003.139" y2="4072.305"/>
+</g>
+<g id="kent_00000028313402668583016410000013558500219820187325_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="2756.13" y1="1958.12" x2="2958.765" y2="2301.668"/>
+</g>
+<g id="kent">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="2048.528" y1="758.448" x2="2756.13" y2="1958.12"/>
+</g>
+<g id="lisgar_00000054249304912264951240000008504223434952892596_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="3140.352" y1="1731.266" x2="4209.402" y2="1100.708"/>
+</g>
+<g id="lisgar_00000079444565251087514610000003344943629491205049_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="2755.897" y1="1958.029" x2="3140.352" y2="1731.266"/>
+</g>
+<g id="lisgar">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="895.545" y1="3055.32" x2="2755.897" y2="1958.029"/>
+</g>
+<g id="bank_00000019679042776925791810000006206612637606289825_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="3344.7" y1="2074.033" x2="4499.158" y2="4010.481"/>
+</g>
+<g id="bank_00000103980053064300217860000007513096391767632027_">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="3140.384" y1="1731.32" x2="3344.7" y2="2074.033"/>
+</g>
+<g id="bank">
+		<line fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" x1="2526.333" y1="701.333" x2="3140.384" y2="1731.32"/>
+</g>
+<circle id="intersection_x5F_lisgar_x5F_kent" cx="2755.997" cy="1958.198" r="51.778"/>
+<circle id="intersection_x5F_lisgar" cx="895.545" cy="3055.32" r="51.778"/>
+<circle id="intersection_x5F_somerset" cx="1431.003" cy="3202.788" r="51.778"/>
+<circle id="intersection_x5F_kent" cx="4003.139" cy="4073.49" r="51.778"/>
+<circle id="intersection_x5F_bank" cx="4499.158" cy="4010.481" r="51.778"/>
+<circle id="intersection_x5F_somerset_00000174583700944827429350000008626287086959618712_" cx="4744.859" cy="1248.177" r="51.778"/>
+<circle id="intersection_x5F_lisgar_00000181049213425165455120000001389971414996135097_" cx="4209.402" cy="1100.708" r="51.778"/>
+<circle id="intersection_x5F_bank_00000072966084742884423840000016002404928607786625_" cx="2526.333" cy="701.333" r="51.778"/>
+<circle id="intersection_x5F_kent_00000136403034281923970210000009230454798382680240_" cx="2048.528" cy="758.448" r="51.778"/>
+<circle id="intersection_x5F_unknown" cx="618.778" cy="1064.889" r="51.778"/>
+<circle id="intersection_x5F_somerset_x5F_kent" cx="2958.765" cy="2301.668" r="51.778"/>
+<circle id="intersection_x5F_bank_x5F_somerset" cx="3344.7" cy="2074.033" r="51.778"/>
+<circle id="intersection_x5F_bank_x5F_lisgar" cx="3140.378" cy="1731.324" r="51.778"/>
+<path id="unknown" fill="none" stroke="#000000" stroke-width="10" stroke-miterlimit="10" d="M618.778,1064.889
+	c197.514-363.806,536.872-581.062,864.003-547.556c155.205,15.897,481.344,177.011,565.747,241.115"/>
+</svg>`;
+
+        let graph = new Map();
+        let inters = [];
+        let turns = []; 
+        let textLabels = [];
+        let mapScale = 1; 
+
+        const key = p => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+        const eq = (a, b) => a && b && Math.hypot(a.x - b.x, a.y - b.y) < 2;
+
+        function loadSVG() {
+            const doc = new DOMParser().parseFromString(hardcodedSvgMap, "image/svg+xml");
+
+            graph.clear();
+            inters = [];
+            resetRoute();
+
+            const liveSvg = document.getElementById('mapSvg');
+            const svgNode = doc.querySelector('svg');
+            let vb = svgNode ? svgNode.getAttribute('viewBox') : null;
+            if (vb) {
+                liveSvg.setAttribute('viewBox', vb);
+                let parts = vb.split(/[\s,]+/).map(Number);
+                if (parts.length === 4) {
+                    mapScale = Math.max(parts[2] / 1920, parts[3] / 1080) || 1;
+                }
+            } else {
+                liveSvg.setAttribute('viewBox', '0 0 1920 1080');
+                mapScale = 1;
+            }
+
+            // 1. Process standard straight lines
+            let rawLines = Array.from(doc.querySelectorAll('line')).map(l => ({
+                p1: {x: parseFloat(l.getAttribute('x1')), y: parseFloat(l.getAttribute('y1'))},
+                p2: {x: parseFloat(l.getAttribute('x2')), y: parseFloat(l.getAttribute('y2'))}
+            }));
+
+            // 2. Process curved paths by flattening them into small line segments
+            Array.from(doc.querySelectorAll('path')).forEach(path => {
+                let d = path.getAttribute('d');
+                if (!d) return;
+                
+                // Inject temporarily to use the browser's native math engine for length & points
+                let p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                p.setAttribute("d", d);
+                liveSvg.appendChild(p); 
+                
+                let len = p.getTotalLength();
+                let step = 30 * mapScale; // The resolution of the curve (smaller = smoother but slower)
+                
+                if (len > 0) {
+                    let prevPt = p.getPointAtLength(0);
+                    for (let i = step; i < len; i += step) {
+                        let currPt = p.getPointAtLength(i);
+                        rawLines.push({ p1: {x: prevPt.x, y: prevPt.y}, p2: {x: currPt.x, y: currPt.y} });
+                        prevPt = currPt;
+                    }
+                    // Ensure the exact final coordinate is captured
+                    let lastPt = p.getPointAtLength(len);
+                    rawLines.push({ p1: {x: prevPt.x, y: prevPt.y}, p2: {x: lastPt.x, y: lastPt.y} });
+                }
+                
+                liveSvg.removeChild(p); // Clean up the temporary injection
+            });
+
+            const rawCircles = Array.from(doc.querySelectorAll('circle, ellipse')).map(c => ({
+                x: parseFloat(c.getAttribute('cx')), 
+                y: parseFloat(c.getAttribute('cy')),
+                id: c.getAttribute('id') || ''
+            }));
+
+            textLabels = Array.from(doc.querySelectorAll('text')).map(t => ({
+                x: parseFloat(t.getAttribute('x') || 0), 
+                y: parseFloat(t.getAttribute('y') || 0),
+                text: t.textContent.trim()
+            }));
+
+            let uniqueNodes = [];
+            const weldPoint = (p) => {
+                let found = uniqueNodes.find(n => Math.hypot(n.x - p.x, n.y - p.y) < (15 * mapScale));
+                if (found) return found;
+                uniqueNodes.push({x: p.x, y: p.y});
+                return uniqueNodes[uniqueNodes.length - 1];
+            };
+
+            const weldedLines = rawLines.map(l => ({
+                p1: weldPoint(l.p1),
+                p2: weldPoint(l.p2)
+            }));
+
+            weldedLines.forEach(({p1, p2}) => {
+                const k1 = key(p1), k2 = key(p2);
+                if (k1 !== k2) { 
+                    if (!(graph.get(k1)||[]).some(p => key(p) === k2)) graph.set(k1, (graph.get(k1)||[]).concat(p2));
+                    if (!(graph.get(k2)||[]).some(p => key(p) === k1)) graph.set(k2, (graph.get(k2)||[]).concat(p1));
+                }
+            });
+
+            const graphNodes = Array.from(graph.keys()).map(k => {
+                let [x, y] = k.split(',').map(Number);
+                return { x, y, key: k };
+            });
+
+            inters = rawCircles.map(c => {
+                let closestNode = graphNodes.reduce((best, n) => {
+                    let d = Math.hypot(c.x - n.x, c.y - n.y);
+                    return d < best.d ? {n, d} : best;
+                }, {n: null, d: Infinity});
+
+                if (closestNode.d < 50 * mapScale) {
+                    let cleanName = c.id.replace(/intersection_x5F_/g, '').replace(/_/g, ' ').replace(/\d{5,}/g, '').trim();
+                    if (!cleanName) cleanName = `Node ${closestNode.n.key}`;
+
+                    textLabels.forEach(t => {
+                        let dist = Math.hypot(c.x - t.x, c.y - t.y);
+                        if (dist < 120 * mapScale) cleanName = t.text;
+                    });
+                    
+                    cleanName = cleanName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                    return { pos: {x: closestNode.n.x, y: closestNode.n.y}, key: closestNode.n.key, name: cleanName };
+                }
+                return null;
+            }).filter(i => i !== null);
+
+            renderMap(weldedLines, rawCircles);
+            renderOptions();
+            updateState();
+        }
+
+        function renderMap(lines, circles) {
+            const svg = document.getElementById('mapSvg');
+            svg.innerHTML = lines.map(l => `<line x1="${l.p1.x}" y1="${l.p1.y}" x2="${l.p2.x}" y2="${l.p2.y}" stroke="#cbd5e1" stroke-width="${12 * mapScale}" stroke-linecap="round" stroke-linejoin="round"/>`).join('') +
+                '<g id="pathG"></g>' + 
+                circles.map(c => `<circle cx="${c.x}" cy="${c.y}" r="${28 * mapScale}" fill="#334155" />`).join('') +
+                textLabels.map(t => `<text x="${t.x}" y="${t.y}" fill="#0f172a" font-size="${28 * mapScale}" font-weight="bold" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">${t.text}</text>`).join('') +
+                '<g id="highlightG"></g>';
+        }
+
+        function renderOptions() {
+            const startSel = document.getElementById('startInter');
+            startSel.innerHTML = '<option value="">-- Start Location --</option>' + inters.map((i, idx) => `<option value="${idx}">${i.name}</option>`).join('');
+            document.getElementById('initialDir').innerHTML = '<option value="">-- Initial Direction --</option>';
+        }
+
+        function renderDir() {
+            const idx = document.getElementById('startInter').value;
+            const dirSel = document.getElementById('initialDir');
+            if (idx === '') {
+                dirSel.innerHTML = '<option value="">-- Initial Direction --</option>';
+                return;
+            }
+            const inter = inters[idx];
+            const neigh = graph.get(inter.key) || [];
+            
+            dirSel.innerHTML = '<option value="">-- Initial Direction --</option>' + neigh.map((p, j) => {
+                return `<option value="${j}">Heading towards next node</option>`;
+            }).join('');
+        }
+
+        function resetRoute() {
+            turns = [];
+        }
+
+        function attemptTurn(type, btnElement) {
+            const startIdx = document.getElementById('startInter').value;
+            const dirIdx = document.getElementById('initialDir').value;
+            if (startIdx === '' || dirIdx === '') {
+                showError(btnElement);
+                return;
+            }
+
+            let testTurns = [...turns, type];
+            if (simulateRoute(testTurns)) {
+                turns.push(type);
+                updateState();
+            } else {
+                showError(btnElement);
+            }
+        }
+
+        function showError(btn) {
+            btn.classList.add('bg-red-600', 'shake');
+            btn.classList.remove('bg-gray-700');
+            const toast = document.getElementById('toast');
+            toast.style.opacity = '1';
+
+            setTimeout(() => {
+                btn.classList.remove('bg-red-600', 'shake');
+                btn.classList.add('bg-gray-700');
+                toast.style.opacity = '0';
+            }, 1000);
+        }
+
+        function simulateRoute(testTurns) {
+            const startIdx = document.getElementById('startInter').value;
+            const dirIdx = document.getElementById('initialDir').value;
+            const startInter = inters[startIdx];
+            const dirTarget = graph.get(startInter.key)[dirIdx];
+            
+            let fullPath = [startInter.pos, ...followPath(startInter.pos, dirTarget)];
+            if (fullPath.length < 2) return false;
+
+            let prevP = fullPath[fullPath.length - 2]; 
+            let currP = fullPath[fullPath.length - 1];
+
+            for (let t of testTurns) {
+                let nextCandidate = getNext(currP, prevP, t);
+                if (!nextCandidate) return false; 
+                
+                let nextSeg = followPath(currP, nextCandidate);
+                fullPath.push(...nextSeg);
+                prevP = fullPath[fullPath.length - 2];
+                currP = fullPath[fullPath.length - 1];
+            }
+            return true;
+        }
+
+        function updateState() {
+            updateHighlight();
+            const startIdx = document.getElementById('startInter').value;
+            const dirIdx = document.getElementById('initialDir').value;
+
+            if (startIdx === '' || dirIdx === '') {
+                renderTurns();
+                drawPath([]);
+                return;
+            }
+
+            const startInter = inters[startIdx];
+            const dirTarget = graph.get(startInter.key)[dirIdx];
+            
+            let fullPath = [startInter.pos, ...followPath(startInter.pos, dirTarget)];
+            let prevP = fullPath[fullPath.length - 2]; 
+            let currP = fullPath[fullPath.length - 1];
+
+            for (let t of turns) {
+                let nextCandidate = getNext(currP, prevP, t);
+                if (!nextCandidate) break; 
+                
+                let nextSeg = followPath(currP, nextCandidate);
+                fullPath.push(...nextSeg);
+                prevP = fullPath[fullPath.length - 2];
+                currP = fullPath[fullPath.length - 1];
+            }
+
+            renderTurns();
+            drawPath(fullPath);
+        }
+
+        function updateHighlight() {
+            const g = document.getElementById('highlightG');
+            g.innerHTML = '';
+            const idx = document.getElementById('startInter').value;
+            const dirIdx = document.getElementById('initialDir').value;
+            if (idx === '') return;
+
+            const inter = inters[idx];
+            g.innerHTML += `<circle cx="${inter.pos.x}" cy="${inter.pos.y}" r="${45 * mapScale}" fill="none" stroke="#a21caf" stroke-width="${6 * mapScale}"/>`;
+
+            if (dirIdx !== '') {
+                const out = graph.get(inter.key)[dirIdx];
+                const dx = out.x - inter.pos.x;
+                const dy = out.y - inter.pos.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const tx = inter.pos.x + (dx / len) * (70 * mapScale);
+                const ty = inter.pos.y + (dy / len) * (70 * mapScale);
+                g.innerHTML += `<line x1="${inter.pos.x}" y1="${inter.pos.y}" x2="${tx}" y2="${ty}" stroke="#10b981" stroke-width="${8 * mapScale}" stroke-linecap="round"/>`;
+            }
+        }
+
+        function renderTurns() {
+            const cont = document.getElementById('turnsList');
+            if (turns.length === 0) {
+                cont.innerHTML = '<div class="text-gray-400 text-sm mt-2 text-center">No turns added.<br>Select a start location and direction.</div>';
+                return;
+            }
+            cont.innerHTML = turns.map((t, i) => {
+                let symbol = t === 'Left' ? '↶' : t === 'Right' ? '↷' : '↑';
+                return `
+                <div class="flex justify-between items-center bg-gray-700 p-2 mb-2 rounded border border-gray-600 shadow-sm">
+                    <span class="font-bold truncate text-sm">${i + 1}. ${symbol} Turn ${t}</span>
+                    <button onclick="removeTurn(${i})" class="text-red-400 hover:text-red-300 px-2 font-bold transition">✕</button>
+                </div>
+                `;
+            }).join('');
+        }
+
+        function removeTurn(index) {
+            turns = turns.slice(0, index); 
+            updateState();
+        }
+
+        function drawPath(pathPoints) {
+            const g = document.getElementById('pathG');
+            g.innerHTML = '';
+            
+            if (pathPoints.length < 2) return;
+
+            const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+            poly.setAttribute("points", pathPoints.map(p => `${p.x},${p.y}`).join(' '));
+            poly.setAttribute("fill", "none");
+            poly.setAttribute("stroke", "#a21caf"); 
+            poly.setAttribute("stroke-width", `${8 * mapScale}`); 
+            poly.setAttribute("stroke-linejoin", "round");
+            poly.setAttribute("stroke-linecap", "round");
+            g.appendChild(poly);
+        }
+
+        function followPath(curr, startNext) {
+            let segment = [startNext];
+            let previous = curr;
+            let current = startNext;
+            
+            let safety = 0;
+            while (safety++ < 1000) { 
+                if (inters.some(i => eq(i.pos, current))) break;
+                
+                const neigh = (graph.get(key(current)) || []).filter(p => !eq(p, previous));
+                if (neigh.length !== 1) break; 
+                
+                previous = current;
+                current = neigh[0];
+                segment.push(current);
+            }
+            return segment;
+        }
+
+        function getNext(currP, prevP, type) {
+            const neigh = (graph.get(key(currP)) || []).filter(p => !eq(p, prevP));
+            if (!neigh.length) {
+                console.warn(`❌ [Turn ${type} Failed]: Dead end. No connected segments found.`);
+                return null;
+            }
+
+            const dxIn = currP.x - prevP.x;
+            const dyIn = currP.y - prevP.y;
+            const angleIn = Math.atan2(dyIn, dxIn);
+
+            const cands = neigh.map(p => {
+                const dxOut = p.x - currP.x;
+                const dyOut = p.y - currP.y;
+                let angleOut = Math.atan2(dyOut, dxOut);
+                
+                let angle = angleOut - angleIn;
+                angle = Math.atan2(Math.sin(angle), Math.cos(angle)); 
+                
+                return {p, angle};
+            }).sort((a, b) => a.angle - b.angle);
+
+            console.log(`\n--- Evaluating Turn: ${type} ---`);
+            console.log(`📍 Incoming Vector Angle: ${(angleIn * 180 / Math.PI).toFixed(1)}°`);
+            cands.forEach((c, i) => {
+                let deg = (c.angle * 180 / Math.PI).toFixed(1);
+                console.log(`🔍 Candidate ${i + 1}: Angle change is ${deg}° (Negative = Left, Positive = Right, ~0 = Straight)`);
+            });
+
+            if (type === 'Straight') {
+                let best = cands.reduce((best, c) => Math.abs(c.angle) < Math.abs(best.angle) ? c : best, cands[0]);
+                if (Math.abs(best.angle) < 0.8) return best.p; 
+                console.warn(`❌ [Turn Straight Failed]: Best angle is ${(best.angle * 180 / Math.PI).toFixed(1)}°. Needs to be between -45° and +45°.`);
+                return null;
+            }
+            if (type === 'Right') {
+                let best = cands[cands.length - 1];
+                if (best.angle > 0.1) return best.p;
+                console.warn(`❌ [Turn Right Failed]: Best angle is ${(best.angle * 180 / Math.PI).toFixed(1)}°. Not positive enough to be a Right turn.`);
+                return null;
+            }
+            if (type === 'Left') {
+                let best = cands[0];
+                if (best.angle < -0.1) return best.p;
+                console.warn(`❌ [Turn Left Failed]: Best angle is ${(best.angle * 180 / Math.PI).toFixed(1)}°. Not negative enough to be a Left turn.`);
+                return null;
+            }
+            
+            return null;
+        }
+
+        // Initialize automatically on load
+        loadSVG();
+        renderTurns(); 
+    </script>
+</body>
+</html>
